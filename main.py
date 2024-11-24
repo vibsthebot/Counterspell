@@ -54,7 +54,7 @@ class Player(pygame.sprite.Sprite):
             self.image = spritePic
         except pygame.error as e:
             print(f"Unable to load player image: {e}")
-            sys.exit()
+            
         self.rect = self.image.get_rect()
         #print(self.rect)
         self.pos = vec((x, y))
@@ -132,7 +132,7 @@ class Shadow(pygame.sprite.Sprite):
             self.image = shadowPic
         except pygame.error as e:
             print(f"Unable to load player image: {e}")
-            sys.exit()
+            
         self.rect = self.image.get_rect()
         #print(self.rect)
         self.pos = vec((x, y))
@@ -232,7 +232,7 @@ class Spike(pygame.sprite.Sprite):
             self.image = pygame.transform.scale(pygame.image.load("spike.png").convert_alpha(), (20, 20))  # Adjust size as needed
         except pygame.error as e:
             print(f"Unable to load spike image: {e}")
-            sys.exit()
+            
         self.rect = self.image.get_rect()
         self.rect.midbottom = (x-40, y)
         self.pos = pygame.math.Vector2(self.rect.midbottom)
@@ -251,7 +251,7 @@ class Mirror(pygame.sprite.Sprite):
             self.image = pygame.transform.scale(pygame.image.load("mirror.png").convert_alpha(), (40, 40))  # Adjust size as needed
         except pygame.error as e:
             print(f"Unable to load mirror image: {e}")
-            sys.exit()
+            
         self.rect = self.image.get_rect()
         self.rect.midbottom = (x-40, y)
         self.pos = pygame.math.Vector2(self.rect.midbottom)
@@ -301,14 +301,14 @@ def kill_screen():
         for event in pygame.event.get():
             if event.type == QUIT:
                 pygame.quit()
-                sys.exit()
+                
             elif event.type == MOUSEBUTTONDOWN:
                 mouse_pos = pygame.mouse.get_pos()
                 if restart_button.collidepoint(mouse_pos):
                     level = 2            # Set level to 2
                     game_loop()    # Reset game objects
                     pygame.quit()
-                    sys.exit()
+                    
                     game_state = PLAYING
                     return
 
@@ -540,14 +540,14 @@ def run_level():
             for event in pygame.event.get():
                 if event.type == QUIT:
                     pygame.quit()
-                    sys.exit()
+                    ()
                 elif event.type == pygame.KEYDOWN:
                     #if event.key == pygame.K_w and jump_count < MAX_JUMPS:
                     #    P1.jump()
                     #    M1.jump()
                     if event.key == pygame.K_ESCAPE:
                         pygame.quit()
-                        sys.exit()
+                        ()
                     elif event.key == pygame.K_s and P1.spike_not_placed:
                         # Place a spike at the player's current position
                         spike = Spike(P1.rect.centerx, P1.rect.bottom)
@@ -599,10 +599,7 @@ def win_screen():
 
     while True:
         for event in pygame.event.get():
-            if event.type == QUIT:
-                pygame.quit()
-                sys.exit()
-            elif event.type == KEYDOWN or event.type == MOUSEBUTTONDOWN:
+            if event.type == KEYDOWN or event.type == MOUSEBUTTONDOWN:
                 game_loop()
                 return
 
@@ -617,7 +614,7 @@ def intro_page():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
-                sys.exit()
+                
             if event.type == pygame.KEYDOWN:
                 intro = False
 
@@ -641,7 +638,7 @@ def about_page():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
-                sys.exit()
+                
             if event.type == pygame.KEYDOWN:
                 about = False
 
@@ -678,7 +675,7 @@ def controls_page():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
-                sys.exit()
+                
             if event.type == pygame.KEYDOWN:
                 controls = False
 
@@ -716,7 +713,6 @@ def controls_page():
 def game_loop():
     initialize_game()
     run_level()
-    win_screen()
     level3()
     run_level()
     level_2()
