@@ -1,8 +1,14 @@
 import asyncio
 import random
+from time import sleep
 import pygame
-import sys
 from pygame.locals import *
+from objects.player import Player
+from objects.shadow import Shadow
+from objects.platforms import Platform, MovingPlatform
+from objects.spike import Spike
+from objects.mirror import Mirror
+#from level_creator import level_creator
 
 # Initialize Pygame
 pygame.init()
@@ -31,253 +37,54 @@ GAME_OVER = 0
 # Initialize game state
 game_state = PLAYING
 
-# Load images (ensure these files exist in your project directory)
-spritePic = pygame.transform.scale(pygame.image.load("spritepicFINAL.png").convert_alpha(), (40, 70))
-shadowPic = pygame.transform.scale(pygame.image.load("shadowspriteFINAL.png").convert_alpha(), (40, 70))
-spriteRunning = pygame.transform.scale(pygame.image.load("spriterunning.png").convert_alpha(), (40, 70))
-shadowRunning = pygame.transform.scale(pygame.image.load("shadowrunning.png").convert_alpha(), (40, 70))
-
 # Define sprite groups
 all_sprites = pygame.sprite.Group()
+global platforms, moving_platforms, spikes, player, shadow, mirror
 platforms = pygame.sprite.Group()
+moving_platforms = pygame.sprite.Group()
 spikes = pygame.sprite.Group()
 
-# Add jump count variables
-jump_count = 0
-MAX_JUMPS = 1
+def level_creator(platform_data, mirror_coords, player_coords, shadow_coords):
+    global all_sprites, platforms, spikes, moving_platforms, player, shadow, mirror
 
-# Define the Player class
-class Player(pygame.sprite.Sprite):
-    def __init__(self, x, y):
-        super().__init__()
-        try:
-            self.image = spritePic
-        except pygame.error as e:
-            print(f"Unable to load player image: {e}")
-            
-        self.rect = self.image.get_rect()
-        #print(self.rect)
-        self.pos = vec((x, y))
-        self.vel = vec(0, 0)
-        self.acc = vec(0, GRAVITY)
-        self.jump_count = 0
-        self.MAX_JUMPS = 1
-        self.spike_not_placed = True
+    # Clear existing sprites
+    platforms.empty()
+    spikes.empty()
+    moving_platforms.empty()
+    all_sprites.empty()
 
-    def move(self):
-        self.acc = vec(0, GRAVITY)  # Apply gravity
+    # Create player and shadow
+    player = Player(player_coords[0], player_coords[1], platforms)
+    shadow = Shadow(shadow_coords[0], shadow_coords[1], platforms)
 
-        pressed_keys = pygame.key.get_pressed()
+    # Create mirror
+    mirror = Mirror(mirror_coords[0], mirror_coords[1], shadow, player)
 
-        if pressed_keys[pygame.K_a] and pressed_keys[pygame.K_d]:
-            self.acc.x = 0
-            self.image = spritePic
-        elif pressed_keys[pygame.K_a]:
-            self.acc.x = -ACC
-            self.image = pygame.transform.flip(spriteRunning, True, False)
-        elif pressed_keys[pygame.K_d]:
-            self.acc.x = ACC
-            self.image = spriteRunning
-        else:
-            self.image = spritePic
+    # Add platforms and obstacles
+    for item in platform_data:
+        if item['type'] == 'platform':
+            platform = Platform(*item['coords'])
+            platforms.add(platform)
+            all_sprites.add(platform)
+        elif item['type'] == 'moving_platform':
+            platform = MovingPlatform(*item['coords'], *item['movement'])
+            platforms.add(platform)
+            moving_platforms.add(platform)
+            all_sprites.add(platform)
+        elif item['type'] == 'spike':
+            spike = Spike(*item['coords'], True)
+            spikes.add(spike)
+            all_sprites.add(spike)
+    floor = Platform(0, HEIGHT - 20, WIDTH, 20)
+    top = Platform(0, -20, WIDTH, 20)
 
-        if pressed_keys[pygame.K_w]:
-            self.jump()
-
-        self.acc.x += self.vel.x * FRIC
-        self.vel += self.acc
-        self.pos += self.vel + 0.5 * self.acc
-
-        # Prevent moving beyond the left and right edges
-        if self.pos.x < self.rect.width / 2:
-            self.pos.x = self.rect.width / 2
-            self.vel.x = 0
-        if self.pos.x > WIDTH - self.rect.width / 2:
-            self.pos.x = WIDTH - self.rect.width / 2
-            self.vel.x = 0
-
-        self.rect.midbottom = self.pos
-        #print(self.rect.midbottom)
-
-    def jump(self):
-        if self.jump_count < self.MAX_JUMPS:
-            self.jump_count += 1
-            self.vel.y = -10
-
-    def draw(self, surface):
-        pygame.draw.rect(surface, (255, 0, 0), self.rect, 2)  # Line thickness 2
-
-    def update(self):
-        self.move()
-        collide = rect_collide(self.rect)
-        if collide != False:
-            if self.rect.centery < collide.rect.bottom:
-                self.pos.y = collide.rect.top + 1
-                self.vel.y = 0
-                self.rect.midbottom = self.pos
-                self.jump_count = 0
-            else:
-                self.vel.y = 0.1
-
-def rect_collide(rect1):
-    for platform in platforms:
-        if rect1.colliderect(platform.rect):
-            return platform
-    return False
-
-class Shadow(pygame.sprite.Sprite):
-    def __init__(self, x, y):
-        super().__init__()
-        try:
-            self.image = shadowPic
-        except pygame.error as e:
-            print(f"Unable to load player image: {e}")
-            
-        self.rect = self.image.get_rect()
-        #print(self.rect)
-        self.pos = vec((x, y))
-        self.vel = vec(0, 0)
-        self.acc = vec(0, GRAVITY)
-        self.jump_count = 0
-        self.MAX_JUMPS = 1  # Allow double jumps
-        self.mirrored_move = False
-        self.isDead = False
-        self.finished_current_level = False
-
-
-    def move(self):
-        self.acc = vec(0, GRAVITY)  # Apply gravity
-
-        pressed_keys = pygame.key.get_pressed()
-        if self.mirrored_move:
-            if pressed_keys[pygame.K_a] and pressed_keys[pygame.K_d]:
-                self.acc.x = 0
-                self.image = shadowPic
-            elif pressed_keys[pygame.K_d]:
-                self.acc.x = -ACC
-                self.image = pygame.transform.flip(shadowRunning, True, False)
-            elif pressed_keys[pygame.K_a]:
-                self.acc.x = ACC
-                self.image = shadowRunning
-            else:
-                self.image = shadowPic
-        else:
-            if pressed_keys[pygame.K_a] and pressed_keys[pygame.K_d]:
-                self.acc.x = 0
-                self.image = shadowPic
-            elif pressed_keys[pygame.K_a]:
-                self.acc.x = -ACC
-                self.image = pygame.transform.flip(shadowRunning, True, False)
-            elif pressed_keys[pygame.K_d]:
-                self.acc.x = ACC
-                self.image = shadowRunning
-            else:
-                self.image = shadowPic
-
-        if pressed_keys[pygame.K_w]:
-            self.jump()
-
-        self.acc.x += self.vel.x * FRIC
-        self.vel += self.acc
-        self.pos += self.vel + 0.5 * self.acc
-
-        # Prevent moving beyond the left and right edges
-        if self.pos.x < 0:
-            self.pos.x = WIDTH
-        if self.pos.x > WIDTH:
-            self.pos.x = 0
-
-        self.rect.midbottom = self.pos
-        #print(self.rect.midbottom)
-
-    def jump(self):
-        if self.jump_count < self.MAX_JUMPS:
-            self.jump_count += 1
-            self.vel.y = -10
-
-    def draw(self, surface):
-        pygame.draw.rect(surface, (255, 0, 0), self.rect, 2)  # Line thickness 2
-
-    def update(self):
-        self.move()
-        collide = rect_collide(self.rect)
-        if collide != False:
-            if self.rect.centery < collide.rect.bottom:
-                self.pos.y = collide.rect.top + 1
-                self.vel.y = 0
-                self.rect.midbottom = self.pos
-                self.jump_count = 0
-            else:
-                self.vel.y = 0.1
-
-# Define the Platform class
-class Platform(pygame.sprite.Sprite):
-    def __init__(self, x, y, width, height):
-        super().__init__()
-        self.image = pygame.Surface((width, height))
-        self.image.fill((234, 208, 168))  # Platform color (Beige)
-        self.rect = pygame.Rect(x, y, width, height)
-
-
-    def draw(self, surface):
-        pygame.draw.rect(surface, (234, 208, 168), self.rect)
-    def move(self):
-        pass  # Platforms are static in this example
-
-# Define the Spike class
-class Spike(pygame.sprite.Sprite):
-    def __init__(self, x, y):
-        super().__init__()
-        try:
-            self.image = pygame.transform.scale(pygame.image.load("spike.png").convert_alpha(), (20, 20))  # Adjust size as needed
-        except pygame.error as e:
-            print(f"Unable to load spike image: {e}")
-            
-        self.rect = self.image.get_rect()
-        self.rect.midbottom = (x-40, y)
-        self.pos = pygame.math.Vector2(self.rect.midbottom)
-        self.vel = pygame.math.Vector2(0, 0)
-        self.acc = pygame.math.Vector2(0, 0)
-
-    def update(self):
-        # If spikes are stationary, no need to update position
-        pass
-
-class Mirror(pygame.sprite.Sprite):
-    finished_current_level = False
-    def __init__(self, x, y, M1, P1):
-        super().__init__()
-        try:
-            self.image = pygame.transform.scale(pygame.image.load("mirror.png").convert_alpha(), (40, 40))  # Adjust size as needed
-        except pygame.error as e:
-            print(f"Unable to load mirror image: {e}")
-            
-        self.rect = self.image.get_rect()
-        self.rect.midbottom = (x-40, y)
-        self.pos = pygame.math.Vector2(self.rect.midbottom)
-        self.vel = pygame.math.Vector2(0, 0)
-        self.acc = pygame.math.Vector2(0, 0)
-        self.M1 = M1
-        self.P1 = P1
-
-    def update(self):
-        if pygame.sprite.collide_rect(self, self.P1):
-            #print("Collided with mirror")
-            pressed_keys = pygame.key.get_pressed()
-            if pressed_keys[pygame.K_f]:
-                self.M1.mirrored_move = True
-            elif pressed_keys[pygame.K_g]:
-                self.M1.mirrored_move = False
-            if self.M1.isDead:
-                # Handle the case when M1 is dead, e.g., restart the level or end the game
-                self.M1.finished_current_level = True
-                #print("M1 is dead")
-    def draw(self, surface):
-        pass
-
+    # Add player and shadow to all_sprites
+    all_sprites.add(player, shadow, mirror)
+    platforms.add(floor, top)
+    all_sprites.add(floor, top)
 
 # Define the kill_screen function with Restart button
-def kill_screen():
+def kill_screen(displaysurface):
     global game_state, level  # To modify the global game state variable
 
     # Define fonts
@@ -299,15 +106,13 @@ def kill_screen():
 
     while True:
         for event in pygame.event.get():
-            if event.type == QUIT:
+            if event.type == pygame.QUIT:
                 pygame.quit()
                 
-            elif event.type == MOUSEBUTTONDOWN:
+            elif event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = pygame.mouse.get_pos()
                 if restart_button.collidepoint(mouse_pos):
-                    level = 2            # Set level to 2
-                    game_loop()    # Reset game objects
-                    pygame.quit()
+                    levels[level - 1]()
                     
                     game_state = PLAYING
                     return
@@ -334,263 +139,202 @@ def kill_screen():
         FramePerSec.tick(FPS)
 
 # Initialize or reset the game
-def initialize_game():
-    global all_sprites, platforms, spikes, P1, M1, mirror, top, floor
-    global level
-    level = 1
-    # Create sprite instances
-    P1 = Player(10, 410)
-    M1 = Shadow(10, 200)
-    mirror = Mirror(200, 430, M1, P1)
-    floor = Platform(0, HEIGHT - 20, WIDTH, 20)
-    platform = Platform(0, 320, 50, 20)
+# Convert existing levels to the new format
 
-    top = Platform(0, -20, WIDTH, 20)
-    # Clear existing sprite groups
-    all_sprites.empty()
-    platforms.empty()
-    spikes.empty()
-    
-    # Add sprites to groups
-    all_sprites.add(floor)
-    all_sprites.add(P1)
-    all_sprites.add(M1)
-    all_sprites.add(platform)
-    all_sprites.add(mirror)
-    
-    platforms.add(floor)
-    platforms.add(platform)
-    #platforms.add(top)
+def level1():
+    platform_data = [
+        {'type': 'platform', 'coords': (0, 320, 50, 20)},
+    ]
+    mirror_coords = (200, 430)
+    player_coords = (10, 410)
+    shadow_coords = (10, 200)
+    level_creator(platform_data, mirror_coords, player_coords, shadow_coords)
 
-# Initialize the game for the first time
-
-# Define the main game loop
-def level_2():
-    global all_sprites, platforms, spikes, P1, M1, mirror, floor, top
-    global level
-    mirror.finished_current_level = False
-    level = 2
-    
-    # Clear existing platforms and spikes
-    platforms.empty()
-    spikes.empty()
-    all_sprites.empty()
-    
-    # Reset player and shadow positions
-    x = random.randint(10, WIDTH-10)
-    P1 = Player(104, 410)
-    #P1.pos = vec(50, HEIGHT - 70)
-    P1.vel = vec(0, 0)
-    P1.acc = vec(0, GRAVITY)
-    P1.jump_count = 0
-    P1.spike_not_placed = True
-    i = random.randint(10, WIDTH-10)
-    while abs(i-x) < 50:
-        i = random.randint(10, WIDTH-10)
-    M1 = Shadow(104, 0)
-    #M1.pos = vec(100, HEIGHT - 70)
-    M1.vel = vec(0, 0)
-    M1.acc = vec(0, GRAVITY)
-    M1.jump_count = 0
-    M1.mirrored_move = False
-    M1.isDead = False
-
-    mirror = Mirror(317, 39, M1, P1)
-    
-    # Define new platforms for level 2
-    floor = Platform(0, HEIGHT - 20, WIDTH, 20)
-    platform1 = Platform(203, 236, 80, 20)
-    platform2 = Platform(29, 327, 80, 20)
-    platform3 = Platform(48, 103, 80, 20)
-    platform4 = Platform(292, 100, 80, 20)
-    platform5 = Platform(39, 220, 80, 20)
-    platform6 = Platform(254, 359, 80, 20)
-    # Add platforms to groups
-    platforms.add(floor, platform1, platform2, platform3, platform4, platform5, platform6)
-    all_sprites.add(floor, platform1, platform2, platform3, platform4, platform5, platform6)
-    
-    # Add player and shadow back to all_sprites
-    all_sprites.add(P1, M1)
-    
-    # Add mirror or other sprites if needed
-    #mirror = Mirror(300, 400, M1, P1)
-    all_sprites.add(mirror)
-    platforms.add(mirror)
+def level2():
+    platform_data = [
+        {'type': 'platform', 'coords': (0, 430, 50, 20)},
+        {'type': 'platform', 'coords': (80, 320, 80, 10)},
+        {'type': 'platform', 'coords': (160, 220, 80, 10)},
+        {'type': 'platform', 'coords': (240, 160, 80, 10)},
+        {'type': 'platform', 'coords': (320, 80, 80, 10)},
+    ]
+    mirror_coords = (300, 39)
+    player_coords = (104, 410)
+    shadow_coords = (104, 70)
+    level_creator(platform_data, mirror_coords, player_coords, shadow_coords)
 
 def level3():
-    global all_sprites, platforms, spikes, P1, M1, mirror, floor, top
-    global level
-    mirror.finished_current_level = False
-    level = 2
-    
-    # Clear existing platforms and spikes
-    platforms.empty()
-    spikes.empty()
-    all_sprites.empty()
-    
-    # Reset player and shadow positions
-    x = random.randint(10, WIDTH-10)
-    P1 = Player(104, 410)
-    #P1.pos = vec(50, HEIGHT - 70)
-    P1.vel = vec(0, 0)
-    P1.acc = vec(0, GRAVITY)
-    P1.jump_count = 0
-    P1.spike_not_placed = True
-    i = random.randint(10, WIDTH-10)
-    while abs(i-x) < 50:
-        i = random.randint(10, WIDTH-10)
-    M1 = Shadow(104, 0)
-    #M1.pos = vec(100, HEIGHT - 70)
-    M1.vel = vec(0, 0)
-    M1.acc = vec(0, GRAVITY)
-    M1.jump_count = 0
-    M1.mirrored_move = False
-    M1.isDead = False
-
-    mirror = Mirror(317, 39, M1, P1)
-    
-    # Define new platforms for level 2
-    floor = Platform(0, HEIGHT - 20, WIDTH, 20)
-    platform1 = Platform(80, 320, 80, 10)
-    platform2 = Platform(160, 240, 80, 10)
-    platform3 = Platform(240, 160, 80, 10)
-    platform4 = Platform(320, 80, 80, 10)
-
-    platforms.add(floor, platform1, platform2, platform3, platform4)
-    all_sprites.add(floor, platform1, platform2, platform3, platform4)
-    
-    # Add player and shadow back to all_sprites
-    all_sprites.add(P1, M1)
-    
-    # Add mirror or other sprites if needed
-    #mirror = Mirror(300, 400, M1, P1)
-    all_sprites.add(mirror)
-    platforms.add(mirror)
-
-'''def level4():
-    global all_sprites, platforms, spikes, P1, M1, mirror, floor, top
-    global level
-    mirror.finished_current_level = False
-    level = 2
-    
-    # Clear existing platforms and spikes
-    platforms.empty()
-    spikes.empty()
-    all_sprites.empty()
-    
-    # Reset player and shadow positions
-    x = random.randint(10, WIDTH-10)
-    P1 = Player(104, 410)
-    #P1.pos = vec(50, HEIGHT - 70)
-    P1.vel = vec(0, 0)
-    P1.acc = vec(0, GRAVITY)
-    P1.jump_count = 0
-    P1.spike_not_placed = True
-    i = random.randint(10, WIDTH-10)
-    while abs(i-x) < 50:
-        i = random.randint(10, WIDTH-10)
-    M1 = Shadow(104, 0)
-    #M1.pos = vec(100, HEIGHT - 70)
-    M1.vel = vec(0, 0)
-    M1.acc = vec(0, GRAVITY)
-    M1.jump_count = 0
-    M1.mirrored_move = False
-    M1.isDead = False
-
-    mirror = Mirror(317, 39, M1, P1)
-    
-    # Define new platforms for level 2
-    floor = Platform(0, HEIGHT - 20, WIDTH, 20)
-    # Level 2 platforms
-    platforms2 = [
-        Platform(50, 450, 150, 20),
-        Platform(250, 400, 120, 20),
-        Platform(400, 350, 180, 20),
-        Platform(600, 300, 100, 20),
-        Platform(750, 250, 150, 20),
-        Platform(900, 200, 120, 20),
-        Platform(1050, 150, 180, 20),
-        Platform(1200, 100, 100, 20)
+    platform_data = [
+        {'type': 'platform', 'coords': (203, 236, 80, 10)},
+        {'type': 'platform', 'coords': (29, 327, 80, 10)},
+        {'type': 'platform', 'coords': (48, 103, 80, 10)},
+        {'type': 'platform', 'coords': (292, 150, 80, 10)},
+        {'type': 'platform', 'coords': (39, 240, 80, 10)},
+        {'type': 'platform', 'coords': (254, 340, 80, 10)},
     ]
+    mirror_coords = (317, 39)
+    player_coords = (104, 410)
+    shadow_coords = (104, 70)
+    level_creator(platform_data, mirror_coords, player_coords, shadow_coords)
 
-    # Add platforms to sprite groups if necessary
-    for platform in platforms2:
-        all_sprites.add(platform)
-        platforms.add(platform)
+def level4():
+    platform_data = [
+        {'type': 'platform', 'coords': (50, 300, 100, 10)},   # HEIGHT - 150 = 300
+        {'type': 'platform', 'coords': (250, 230, 100, 10)},  # HEIGHT - 220 = 230
+        # Add more platforms as desired
+    ]
+    mirror_coords = (WIDTH / 2, 190)  # HEIGHT - 260 = 190
+    player_coords = (50, 370)         # HEIGHT - 80 = 370
+    shadow_coords = (350, 370)
+    level_creator(platform_data, mirror_coords, player_coords, shadow_coords)
 
-    #platforms.add(floor, platform1, platform2, platform3, top)
-    #all_sprites.add(floor, platform1, platform2, platform3, top)
-    
-    # Add player and shadow back to all_sprites
-    all_sprites.add(P1, M1)
-    
-    # Add mirror or other sprites if needed
-    #mirror = Mirror(300, 400, M1, P1)
-    all_sprites.add(mirror)
-    platforms.add(mirror)'''
+def level5():
+    platform_data = [
+        {'type': 'platform', 'coords': (100, 270, 200, 20)},  # HEIGHT - 180 = 270
+        {'type': 'platform', 'coords': (50, 150, 100, 20)},   # HEIGHT - 300 = 150
+        {'type': 'platform', 'coords': (250, 150, 100, 20)},  # HEIGHT - 300 = 150
+        # Add more platforms as desired
+    ]
+    mirror_coords = (WIDTH / 2, 110)  # HEIGHT - 340 = 110
+    player_coords = (50, 370)         # HEIGHT - 80 = 370
+    shadow_coords = (350, 370)
+    level_creator(platform_data, mirror_coords, player_coords, shadow_coords)
 
+def level1():
+    platform_data = [
+        {'type': 'platform', 'coords': (0, HEIGHT - 40, WIDTH, 40)},  # Ground
+        {'type': 'platform', 'coords': (50, HEIGHT - 100, 100, 10)},
+        {'type': 'spike', 'coords': (200, HEIGHT - 50)},
+    ]
+    mirror_coords = (WIDTH / 2, HEIGHT - 150)
+    player_coords = (50, HEIGHT - 80)
+    shadow_coords = (350, HEIGHT - 80)
+    level_creator(platform_data, mirror_coords, player_coords, shadow_coords)
+
+def level2():
+    platform_data = [
+        {'type': 'platform', 'coords': (0, HEIGHT - 40, WIDTH, 40)},
+        {'type': 'moving_platform', 'coords': (100, HEIGHT - 200, 100, 10), 'movement': (HEIGHT - 300, HEIGHT - 100, 2)},
+        {'type': 'platform', 'coords': (250, HEIGHT - 250, 100, 10)},
+        {'type': 'spike', 'coords': (150, HEIGHT - 50)},
+        {'type': 'spike', 'coords': (300, HEIGHT - 50)},
+    ]
+    mirror_coords = (WIDTH / 2, HEIGHT - 300)
+    player_coords = (50, HEIGHT - 80)
+    shadow_coords = (350, HEIGHT - 80)
+    level_creator(platform_data, mirror_coords, player_coords, shadow_coords)
+
+def level3():
+    platform_data = [
+        {'type': 'platform', 'coords': (0, HEIGHT - 40, WIDTH, 40)},
+        {'type': 'platform', 'coords': (50, HEIGHT - 150, 100, 10)},
+        {'type': 'platform', 'coords': (250, HEIGHT - 150, 100, 10)},
+        {'type': 'moving_platform', 'coords': (150, HEIGHT - 250, 100, 10), 'movement': (70, HEIGHT - 150, 3)},
+        {'type': 'spike', 'coords': (WIDTH / 2, HEIGHT - 50)},
+    ]
+    mirror_coords = (WIDTH / 2, HEIGHT - 400)
+    player_coords = (50, HEIGHT - 80)
+    shadow_coords = (350, HEIGHT - 80)
+    level_creator(platform_data, mirror_coords, player_coords, shadow_coords)
+
+def level4():
+    platform_data = [
+        {'type': 'platform', 'coords': (0, HEIGHT - 40, WIDTH, 40)},
+        {'type': 'platform', 'coords': (0, HEIGHT - 100, 80, 10)},
+        {'type': 'platform', 'coords': (320, HEIGHT - 100, 80, 10)},
+        {'type': 'moving_platform', 'coords': (160, HEIGHT - 150, 80, 10), 'movement': (HEIGHT - 250, HEIGHT - 90, 2)},
+        {'type': 'spike', 'coords': (80, HEIGHT - 50)},
+        {'type': 'spike', 'coords': (240, HEIGHT - 50)},
+    ]
+    mirror_coords = (WIDTH / 2, HEIGHT - 300)
+    player_coords = (50, HEIGHT - 80)
+    shadow_coords = (350, HEIGHT - 80)
+    level_creator(platform_data, mirror_coords, player_coords, shadow_coords)
+
+def level5():
+    platform_data = [
+        {'type': 'platform', 'coords': (0, HEIGHT - 40, WIDTH, 40)},
+        {'type': 'moving_platform', 'coords': (100, HEIGHT - 100, 200, 10), 'movement': (HEIGHT - 300, HEIGHT - 50, 4)},
+        {'type': 'spike', 'coords': (WIDTH / 2 - 50, HEIGHT - 50)},
+        {'type': 'spike', 'coords': (WIDTH / 2 + 50, HEIGHT - 50)},
+    ]
+    mirror_coords = (WIDTH / 2, HEIGHT - 350)
+    player_coords = (50, HEIGHT - 80)
+    shadow_coords = (350, HEIGHT - 80)
+    level_creator(platform_data, mirror_coords, player_coords, shadow_coords)
+
+
+levels = [level1, level2, level3, level4, level5]
 def run_level():
-    global game_state
+    global game_state, player, shadow
     PLAYING = 1
     GAME_OVER = 0
     game_state = PLAYING
     print("Running level")
-    while M1.finished_current_level == False:
+    while shadow.finished_current_level == False:
         if game_state == PLAYING:
             for event in pygame.event.get():
                 if event.type == QUIT:
                     pygame.quit()
                     ()
                 elif event.type == pygame.KEYDOWN:
-                    #if event.key == pygame.K_w and jump_count < MAX_JUMPS:
-                    #    P1.jump()
-                    #    M1.jump()
+                    if event.key == pygame.K_w:
+                        player.jump()
+                        shadow.jump()
                     if event.key == pygame.K_ESCAPE:
                         pygame.quit()
-                        ()
-                    elif event.key == pygame.K_s and P1.spike_not_placed:
+                    elif event.key == pygame.K_s and player.spike_not_placed:
                         # Place a spike at the player's current position
-                        spike = Spike(P1.rect.centerx, P1.rect.bottom)
+                        spike = Spike(player.rect.centerx, player.rect.bottom, False)
                         all_sprites.add(spike)
                         spikes.add(spike)
-                        P1.spike_not_placed = False
+                        player.spike_not_placed = False
+                    elif event.key == pygame.K_f and pygame.sprite.collide_rect(player, mirror):
+                        if shadow.mirrored_move:
+                            shadow.mirrored_move = False
+                        else:
+                            shadow.mirrored_move = True
 
             # Update and move sprites
-            P1.move()
-            M1.move()
+            #player.move()
+            #shadow.move()
             all_sprites.update()
-            all_sprites.draw(displaysurface)
-            pygame.display.flip()
+            #all_sprites.draw(displaysurface)
+            #pygame.display.flip()
 
             # Check for collisions between spikes and other sprites (e.g., Shadow)
             collisions = pygame.sprite.groupcollide(spikes, all_sprites, False, False)
             for spike, hit_sprites in collisions.items():
                 for sprite in hit_sprites:
-                    if sprite != P1 and isinstance(sprite, Shadow):
-                        M1.isDead = True
-                        sprite.kill()   # Remove the Shadow
-                        spike.kill()    # Optionally remove the spike after collision
-                    elif sprite == P1:
+                    if sprite != player and isinstance(sprite, Shadow):
+                        if spike.original == False:
+                            shadow.isDead = True
+                            sprite.kill()   # Remove the Shadow
+                            spike.kill()    # Optionally remove the spike after collision
+                    elif sprite == player:
+                        
+                        print("Player hit by spike")
                         game_state = GAME_OVER
-                        kill_screen()
+                        kill_screen(displaysurface)
 
-            # Check for collision between Player and Shadow (or other game over conditions)
-            if pygame.sprite.collide_rect(P1, M1):
+            if pygame.sprite.collide_rect(player, shadow) and shadow.isDead == False:
+                print("Player hit by shadow")
                 game_state = GAME_OVER
-                kill_screen()
+                kill_screen(displaysurface)
 
             # Render everything
-            displaysurface.fill((0, 0, 0))  # Clear screen with black
+            background = pygame.transform.scale(pygame.image.load('images/background.png'), (400, 450))
+            displaysurface.blit(background, (0, 0))  # Draw the background image
             all_sprites.draw(displaysurface)
-            for sprite in platforms:
-                sprite.draw(displaysurface)
-            #P1.draw(displaysurface)
-            #M1.draw(displaysurface)
+            player.draw(displaysurface)
+            shadow.draw(displaysurface)
             pygame.display.flip()
+            #sleep(10)
             FramePerSec.tick(FPS)
+            #sleep(1)
 
         elif game_state == GAME_OVER:
-            kill_screen()
+            kill_screen(displaysurface)
 
 def win_screen():
     font = pygame.font.Font(None, 74)
@@ -598,10 +342,10 @@ def win_screen():
     text_rect = text.get_rect(center=(WIDTH / 2, HEIGHT / 2))
 
     while True:
-        for event in pygame.event.get():
+        '''for event in pygame.event.get():
             if event.type == KEYDOWN or event.type == MOUSEBUTTONDOWN:
                 game_loop()
-                return
+                return'''
 
         displaysurface.fill((0, 0, 0))
         displaysurface.blit(text, text_rect)
@@ -616,7 +360,8 @@ def intro_page():
                 pygame.quit()
                 
             if event.type == pygame.KEYDOWN:
-                intro = False
+                if event.key == pygame.K_SPACE:
+                    intro = False
 
         displaysurface.fill((0, 0, 0))
         font = pygame.font.Font(None, 74)
@@ -711,12 +456,17 @@ def controls_page():
         FramePerSec.tick(FPS)
 
 def game_loop():
-    initialize_game()
+    global level
+    for i in levels:
+        level = levels.index(i) + 1
+        i()  # Call the level function
+        run_level()
+    '''level1()
+    run_level()
+    level2()
     run_level()
     level3()
-    run_level()
-    level_2()
-    run_level()
+    run_level()'''
     win_screen()
 
 async def main():
